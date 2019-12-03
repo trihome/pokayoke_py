@@ -60,7 +60,7 @@ class GpioOut():
         self.__GpioStatus = []
         for item in self.__GpioPin:
             # ピンを出力設定
-            GPIO.setup(item, GPIO.OUT)
+            GPIO.setup(item, GPIO.OUT, initial=GPIO.LOW)
             # 制御対象のピン番号のステータスを初期化
             self.__GpioStatus.append(0)
 
@@ -179,4 +179,4 @@ class GpioOut():
                     GPIO.output(i, 0)
         else:
             # それ以外の時はエラー
-            print("Port %s is not found." % (arg_port))
+            print("Port %s is not found." % (arg_ch))
