@@ -69,18 +69,28 @@ class Main():
     メイン処理クラス
     """
 
-    # 入力監視ポート
+    # GPIO入力監視ポート
     __gpio_input = [21, 20, 16, 12]
     # 入力長押しタイマー
     __gpio_input_timer = []
-    # 入力監視ポート(I2C割込)
+    # GPIO入力監視ポート(I2C割込)
     __gpio_int = [7]
+
+    # GPIO出力ポート
+    __gpio_output = [26, 19, 13, 6]
 
     # メインステート
     __state_main = None
 
-    #デバッグモード
+    # デバッグモード
     __debug = False
+
+    # 点灯パターンのデフォルト値
+    pattern = [0, 1, 2, 3]
+    # パターンの進捗カウンタ
+    __pattern_counter = 0
+    # 現在点灯中のランプの点灯・点滅パターン
+    __pattern_now_mode = 3
 
     def __init__(self, arg_verbose=False):
         """
@@ -90,7 +100,7 @@ class Main():
         """
         pass
         if arg_verbose == True:
-            #デバッグモードを有効化
+            # デバッグモードを有効化
             self.__debug = True
 
     def print(self, arg_message, arg_err=False):
@@ -120,7 +130,9 @@ class Main():
                 # 運転状態から一時停止状態に移行
                 self.__state_main = State_Main.PAUSE
 
-            # 一時停止状態で押しっぱなしなら、長押し時間計測開始
+            #長押し時間の指定
+            time_nagaoshi = 0.7
+            # 一時停止状態でBボタン押しっぱなしなら、長押し時間計測開始
             if (self.__state_main == State_Main.PAUSE) and (ch_val == 1):
                 # 押されたとき、現在時間を保存
                 self.__gpio_input_timer[self.__gpio_input.index(
@@ -129,9 +141,15 @@ class Main():
                 # 離されたとき、現在時間との差を計算
                 div = time.time() - \
                     self.__gpio_input_timer[self.__gpio_input.index(gpio_pin)]
-                if div > 0.7 and div < 3:
+                if div > time_nagaoshi and div < time_nagaoshi * 5:
                     # 指定時間以上押されたらリセット状態に移行
                     self.__state_main = State_Main.RESET
+        elif gpio_pin == self.__gpio_input[2] or gpio_pin == self.__gpio_input[3]:
+            # 上下ボタンが押された
+            # 一時停止状態の時
+            if self.__state_main == State_Main.PAUSE:
+                    # リセット状態に移行
+                self.__state_main = State_Main.RESET
         else:
             pass
 
@@ -158,34 +176,101 @@ class Main():
                 GPIO.setup(port, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
             # I2C初期化
-            i2cin = IoExpI2C.IoExpI2C()
+            ioexp = IoExpI2C.IoExpI2C()
+
+            # GPIO出力初期化
+            gpioout = GpioOut.GpioOut(self.__gpio_output)
 
             # ステート初期化
             self.__state_main = State_Main.NONE
+
+            #立ち上がった事を示す点灯
+            ioexp.Flash()
 
             # メインループ
             while True:
 
                 # I2C入力監視
+                i2c_status = [0, 0, 0, 0, 0, 0, 0, 0]
                 for port in self.__gpio_int:
                     if GPIO.input(port) == GPIO.LOW:
                         self.print(" I2C INT > GPIO [ %d ]" % port)
-                        i2cin.Read()
+                        i2c_status = ioexp.Read()
 
-                #ステート毎の処理
+                # ステート毎の処理
                 if self.__state_main == State_Main.NONE:
-                    self.print("State > NONE")
+                    #self.print("State > NONE")
+                    # リモコンランプを点灯
+                    gpioout.Update(0, 0)
+                    gpioout.Update(1, 1)
+                    # IoExpを全消灯
+                    ioexp.Update(9, 0)
                 elif self.__state_main == State_Main.RESET:
-                    self.print("State > RESET")
+                    # リセット状態
+                    #self.print("State > RESET")
+                    # リモコンランプを点灯
+                    gpioout.Update(0, 0)
+                    gpioout.Update(1, 1)
+                    # IoExpを全消灯
+                    ioexp.Update(9, 0)
+                    # パターンの進捗カウンタをリセット
+                    self.__pattern_counter = 0
+                    # 点灯・点滅パターンを初期値に戻す
+                    self.__pattern_now_mode = 3
                 elif self.__state_main == State_Main.PAUSE:
-                    self.print("State > PAUSE")
+                    # 一時停止状態
+                    #self.print("State > PAUSE")
+                    # リモコンランプを点灯
+                    gpioout.Update(0, 0)
+                    gpioout.Update(1, 3)
                 elif self.__state_main == State_Main.DO:
-                    self.print("State > DO")
+                    # 運転中の状態
+                    #self.print("State > DO")
+                    # リモコンランプを点灯
+                    gpioout.Update(0, 1)
+                    gpioout.Update(1, 0)
+                    # パターンに応じて点灯
+                    if self.__pattern_counter < len(self.pattern):
+                        # カウンタがパターン数を超えてなければ
+                        # 現在のパターンを読み出し
+                        pattern_now = self.pattern[self.__pattern_counter]
+                        # 対象を中速点滅
+                        ioexp.Update(pattern_now,  self.__pattern_now_mode)
+                    else:
+                        # カウンタがパターン数を超えたら
+                        #一旦全点灯
+                        ioexp.Update(9, 1)
+                        time.sleep(0.5)
+                        #フラッシュ
+                        ioexp.Flash(1)
+                        #全消灯
+                        ioexp.Update(9, 0)
+                        time.sleep(0.5)
+                        # パターンの進捗カウンタをリセット
+                        self.__pattern_counter = 0
+                        # IoExpを全消灯
+                        ioexp.IoExpUpdate(9, 0)
+
+                    # 対象のボタンが押されたかチェック
+                    if i2c_status[pattern_now] == 1:
+                        # 対象を点灯
+                        ioexp.Update(pattern_now, 1)
+                        # パターンの進捗カウンタをインクリメントし、次のパターン番号に移行
+                        self.__pattern_counter += 1
+                        # 点灯・点滅パターンを初期値に戻す
+                        self.__pattern_now_mode = 3
+                    elif (i2c_status[pattern_now] == 0) and (sum(i2c_status) > 0):
+                        # 間違ったボタンを押した
+                        # 対象を高速点滅に切替
+                        self.__pattern_now_mode = 4
+                    else:
+                        pass
 
                 time.sleep(0.01)
 
         except KeyboardInterrupt:
-
+            # IoExpを全消灯
+            ioexp.IoExpUpdate(9, 0)
             # コールバック解放処理
             for port in self.__gpio_input:
                 GPIO.remove_event_detect(port)
@@ -204,6 +289,6 @@ def main(args=None):
     do.Do()
 
 
-
 if __name__ == '__main__':
+    # 引数Trueでデバッグモード
     main(True)

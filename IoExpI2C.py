@@ -50,28 +50,28 @@ REG_OLATA = 0x14  # ■■■出力ラッチレジスタ
 REG_OLATB = 0x15  # (出力ラッチの値)
 '''
 ※IOCON 内容
-bit 7     BANK    レジスタのアドレス指定を制御する       
+bit 7     BANK    レジスタのアドレス指定を制御する
     1 = 各ポートに関連付けられているレジスタが別々のバンクに分かれる
-    0 = レジスタが全部同じバンクに入れられる( アドレスが連続した状態)       
-bit 6     MIRROR    INT ピンのMirror ビット       
+    0 = レジスタが全部同じバンクに入れられる( アドレスが連続した状態)
+bit 6     MIRROR    INT ピンのMirror ビット
     1 = INT ピン同士を内部接続する
     0 = INT ピン同士を接続しない。
-        INTA はPORTA に関連付けられ、INTB はPORTB に関連付けられる。       
-bit 5     SEQOP    シーケンシャル動作モードビット       
+        INTA はPORTA に関連付けられ、INTB はPORTB に関連付けられる。
+bit 5     SEQOP    シーケンシャル動作モードビット
     1 = シーケンシャル動作が無効になり、アドレスポインタはインクリメントされない
-    0 = シーケンシャル動作が有効になり、アドレスポインタがインクリメントされる       
-bit 4     DISSLW    SDA 出力のスルーレート制御ビット       
+    0 = シーケンシャル動作が有効になり、アドレスポインタがインクリメントされる
+bit 4     DISSLW    SDA 出力のスルーレート制御ビット
     1 = スルーレートは無効
-    0 = スルーレートは有効       
+    0 = スルーレートは有効
 bit 3    HAEN    ハードウェア アドレス イネーブル ビット(MCP23S17 のみ)
-    MCP23017は値に関わらず、アドレスピンは常に有効。       
-bit 2    ODR    INT ピンをオープンドレイン出力として設定する       
+    MCP23017は値に関わらず、アドレスピンは常に有効。
+bit 2    ODR    INT ピンをオープンドレイン出力として設定する
     1 = オープンドレイン出力(INTPOL ビットよりも優先される)
-    0 = アクティブ ドライバ出力( 極性はINTPOL ビットで設定する)       
-bit 1    INTPOL    このビットでINT 出力ピンの極性を設定する       
+    0 = アクティブ ドライバ出力( 極性はINTPOL ビットで設定する)
+bit 1    INTPOL    このビットでINT 出力ピンの極性を設定する
     1 = アクティブHigh
-    0 = アクティブLow       
-bit 0     未実装    0」として読み出し       
+    0 = アクティブLow
+bit 0     未実装    0」として読み出し
 尚、BANK を変更すると、アドレスマッピングが変更されるため、注意の事。
 ( 1バイトアクセスでライトすること。)
 '''
@@ -200,6 +200,44 @@ class IoExpI2C():
             # ウェイト
             time.sleep(self.__INTERVAL)
 
+    def Flash(self, arg_mode=0):
+        """
+        フラッシュ（流星）点灯
+        Parameters
+        ----------
+        arg_mode :
+            点灯パターン(0:流星、1:点滅)
+        """
+        if arg_mode == 0:
+            # 流星左～右
+            for i in range(8):
+                self.IoExpUpdate(i, 1)
+                time.sleep(0.03)
+            for i in range(8):
+                self.IoExpUpdate(i, 0)
+                time.sleep(0.03)
+        elif arg_mode == 1:
+            # 流星右～左
+            for i in range(8):
+                self.IoExpUpdate(8 - i, 1)
+                time.sleep(0.03)
+            for i in range(8):
+                self.IoExpUpdate(8 - i, 0)
+                time.sleep(0.03)
+        elif arg_mode == 2:
+            # 点滅
+            for j in range(4):
+                for i in range(8):
+                    self.IoExpUpdate(i, 1)
+                time.sleep(0.08)
+                for i in range(8):
+                    self.IoExpUpdate(i, 0)
+                time.sleep(0.08)
+        else:
+            pass
+
+        pass
+
     def Update(self, arg_ch, arg_val):
         """
         出力状態の更新
@@ -207,48 +245,49 @@ class IoExpI2C():
         ----------
         arg_ch : 
             ch番号(0から始まる値で指定)
+            (ポート9番を指定されたときは、全ポートを同時操作)
         arg_val : 
             点灯条件値
             （0:消灯、1:点灯、2:点滅（長）、3:点滅（中）、4:点滅（短））
         """
-        if arg_ch < 8:
-            # 受け取ったポート番号が、8を超えていないこと
-            if arg_val == 0:
-                # 指定の番号をOFF
-                self.IoExpUpdate(arg_ch, 0)
-                # 点灯ステータスの変更
-                self.__GpioStatus[arg_ch] = 0
-            elif arg_val == 1:
-                # 指定の番号をON
-                self.IoExpUpdate(arg_ch, 1)
-                # 点灯ステータスの変更
-                self.__GpioStatus[arg_ch] = 1
-            elif arg_val == 2:
-                # 指定の番号を点滅・長
-                # 点灯ステータスの変更
-                self.__GpioStatus[arg_ch] = 2
-                pass
-            elif arg_val == 3:
-                # 指定の番号を点滅・中
-                # 点灯ステータスの変更
-                self.__GpioStatus[arg_ch] = 3
-                pass
-            elif arg_val == 4:
-                # 指定の番号を点滅・短
-                self.__GpioStatus[arg_ch] = 4
-                pass
+        if arg_val < 5:
+            # 受け取った点灯条件値が、5を超えていないこと
+            if arg_ch < 8:
+                # 受け取ったポート番号が、8を超えていないこと
+                if arg_val == 0:
+                    # 指定の番号をOFF
+                    self.IoExpUpdate(arg_ch, 0)
+                    # 点灯ステータスの変更
+                    self.__GpioStatus[arg_ch] = 0
+                elif arg_val == 1:
+                    # 指定の番号をON
+                    self.IoExpUpdate(arg_ch, 1)
+                    # 点灯ステータスの変更
+                    self.__GpioStatus[arg_ch] = 1
+                elif arg_val >= 2 and arg_val <= 4:
+                    # 指定の番号を点滅・長・中・短
+                    # 点灯ステータスの変更
+                    self.__GpioStatus[arg_ch] = arg_val
+                else:
+                    pass
+            elif arg_ch == 9:
+                # ポート9番を指定されたときは、全ポートを同時操作
+                for ch in range(8):
+                    # 指定の番号をON
+                    self.IoExpUpdate(ch, arg_val)
+                    # 点灯ステータスの変更
+                    self.__GpioStatus[ch] = arg_val
             else:
-                pass
-        elif arg_ch == 99:
-            # ポート99番を指定されたときは、全ポートを同時操作
-            pass
+                # それ以外の時はエラー
+                print("Port %s is not found." % (arg_ch))
         else:
             # それ以外の時はエラー
-            print("Port %s is not found." % (arg_ch))
+            print("val error %d." % (arg_ch))
 
     def IoExpUpdate(self, arg_ch, arg_val):
         """
         IoExpander出力
+        （この関数は直接呼び出さないこと。Update関数を使って下さい）
         Parameters
         ----------
         arg_ch : 
@@ -314,8 +353,7 @@ class IoExpI2C():
             port_now.append(ch)
             val_now.append(val)
         # ログの表示
-        print("Port (IN): %s -> %s (INTCAP) %s " %
-                (port_now, val_now, bin(i2c_in_val)))
-        #読んだ値を返す
+        # print("Port (IN): %s -> %s (INTCAP) %s " %
+        #        (port_now, val_now, bin(i2c_in_val)))
+        # 読んだ値を返す
         return val_now
-        
