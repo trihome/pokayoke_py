@@ -24,6 +24,8 @@ class State_Main(Enum):
     RESET = auto()
     PAUSE = auto()
     DO = auto()
+    CHANGERANGE = auto()
+    CHANGERANGE_DONE = auto()
 
 
 def test_out():
@@ -121,8 +123,15 @@ class Main():
         # メインステートの変更
         if gpio_pin == self.__gpio_input[0]:
             # Aボタンが押された
-            # 運転状態に移行
-            self.__state_main = State_Main.DO
+            if self.__state_main == State_Main.CHANGERANGE:
+                # 範囲設定モードの時、範囲確定に移る
+                self.__state_main = State_Main.CHANGERANGE_DONE
+            elif self.__state_main == State_Main.DO:
+                # 運転中は何もしない
+                pass
+            else:
+                # 運転状態に移行
+                self.__state_main = State_Main.DO
 
         elif gpio_pin == self.__gpio_input[1]:
             # Bボタンが押された
@@ -130,7 +139,7 @@ class Main():
                 # 運転状態から一時停止状態に移行
                 self.__state_main = State_Main.PAUSE
 
-            #長押し時間の指定
+            # 長押し時間の指定
             time_nagaoshi = 0.7
             # 一時停止状態でBボタン押しっぱなしなら、長押し時間計測開始
             if (self.__state_main == State_Main.PAUSE) and (ch_val == 1):
@@ -150,8 +159,40 @@ class Main():
             if self.__state_main == State_Main.PAUSE:
                     # リセット状態に移行
                 self.__state_main = State_Main.RESET
+            elif self.__state_main == State_Main.DO:
+                # 運転中は何もしない
+                pass
+            elif self.__state_main == State_Main.RESET:
+                # リセット状態の時
+                # 範囲変更モードに移行
+                self.__state_main = State_Main.CHANGERANGE
+                print(" MODE : CHANGERANGE")
+            else:
+                pass
         else:
             pass
+
+        if self.__state_main == State_Main.CHANGERANGE:
+            # 範囲変更モードのとき
+            if gpio_pin == self.__gpio_input[2] and ch_val == 1:
+                # 上ボタンが操作された
+                if len(self.pattern) <= 8:
+                    # 範囲内である事を確認
+                    # 最後の値を取り出し
+                    val = self.pattern[-1]
+                    # 最後の値に１を加算
+                    val += 1
+                    # パターンリストの最後に追加
+                    self.pattern.append(val)
+                    print(self.pattern)
+
+            elif gpio_pin == self.__gpio_input[3] and ch_val == 1:
+                # 下ボタンが押された
+                if len(self.pattern) > 2:
+                    # 範囲内である事を確認
+                    # パターンリストの最後の値を削除
+                    self.pattern.pop()
+                    print(self.pattern)
 
     def Do(self):
         """
@@ -182,9 +223,9 @@ class Main():
             gpioout = GpioOut.GpioOut(self.__gpio_output)
 
             # ステート初期化
-            self.__state_main = State_Main.NONE
+            self.__state_main = State_Main.RESET
 
-            #立ち上がった事を示す点灯
+            # 立ち上がった事を示す点灯
             ioexp.Flash()
 
             # メインループ
@@ -199,15 +240,16 @@ class Main():
 
                 # ステート毎の処理
                 if self.__state_main == State_Main.NONE:
-                    #self.print("State > NONE")
+                    self.print("State > NONE")
                     # リモコンランプを点灯
                     gpioout.Update(0, 0)
                     gpioout.Update(1, 1)
                     # IoExpを全消灯
                     ioexp.Update(9, 0)
+
                 elif self.__state_main == State_Main.RESET:
                     # リセット状態
-                    #self.print("State > RESET")
+                    self.print("State > RESET")
                     # リモコンランプを点灯
                     gpioout.Update(0, 0)
                     gpioout.Update(1, 1)
@@ -217,15 +259,42 @@ class Main():
                     self.__pattern_counter = 0
                     # 点灯・点滅パターンを初期値に戻す
                     self.__pattern_now_mode = 3
+
                 elif self.__state_main == State_Main.PAUSE:
                     # 一時停止状態
-                    #self.print("State > PAUSE")
+                    self.print("State > PAUSE")
                     # リモコンランプを点灯
                     gpioout.Update(0, 0)
                     gpioout.Update(1, 3)
+
+                elif self.__state_main == State_Main.CHANGERANGE:
+                    # 範囲変更受付の状態
+                    #self.print("State > CHANGERANGE")
+                    # 範囲の数を数える
+                    length = len(self.pattern)
+                    # 設定されている範囲だけ点灯
+                    for ch in range(length):
+                        ioexp.Update(ch, 3)
+                    # それ以外を消灯
+                    for ch in range(length, 8):
+                        ioexp.Update(ch, 0)
+                elif self.__state_main == State_Main.CHANGERANGE_DONE:
+                    # 範囲変更受付完了の状態
+                    self.print("State > CHANGERANGE_DONE")
+                    # 確定した範囲を示す点滅
+                    for ch in self.pattern:
+                        ioexp.Update(ch, 4)
+                    time.sleep(1)
+                    # フラッシュ
+                    ioexp.Flash(1)
+                    # 全消灯
+                    ioexp.Update(9, 0)
+                    # 状態を移行
+                    self.__state_main = State_Main.RESET
+                    pass
                 elif self.__state_main == State_Main.DO:
                     # 運転中の状態
-                    #self.print("State > DO")
+                    self.print("State > DO")
                     # リモコンランプを点灯
                     gpioout.Update(0, 1)
                     gpioout.Update(1, 0)
@@ -238,12 +307,13 @@ class Main():
                         ioexp.Update(pattern_now,  self.__pattern_now_mode)
                     else:
                         # カウンタがパターン数を超えたら
-                        #一旦全点灯
-                        ioexp.Update(9, 1)
+                        # 一旦全点灯
+                        for ch in self.pattern:
+                            ioexp.Update(ch, 1)
                         time.sleep(0.5)
-                        #フラッシュ
+                        # フラッシュ
                         ioexp.Flash(1)
-                        #全消灯
+                        # 全消灯
                         ioexp.Update(9, 0)
                         time.sleep(0.5)
                         # パターンの進捗カウンタをリセット
