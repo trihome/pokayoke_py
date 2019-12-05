@@ -11,6 +11,7 @@ import time
 import RPi.GPIO as GPIO
 from enum import Enum, auto
 from datetime import datetime
+import yaml
 
 import GpioOut
 import IoExpI2C
@@ -94,6 +95,9 @@ class Main():
     # 現在点灯中のランプの点灯・点滅パターン
     __pattern_now_mode = 3
 
+    # 設定ファイル名
+    __setting_file = 'config.yaml'
+
     def __init__(self, arg_verbose=False):
         """
         コンストラクタ
@@ -104,6 +108,15 @@ class Main():
         if arg_verbose == True:
             # デバッグモードを有効化
             self.__debug = True
+
+        # yaml形式設定ファイルを読み込み
+        with open(self.__setting_file) as file:
+            config = yaml.safe_load(file.read())
+            # パターンを読み込み
+            pattern = config["buttonrange"]
+            if len(pattern) > 1:
+                #読み込みが上手くいけば、パターンデータを置き換え
+                self.pattern = pattern
 
     def print(self, arg_message, arg_err=False):
         """
@@ -176,7 +189,7 @@ class Main():
             # 範囲変更モードのとき
             if gpio_pin == self.__gpio_input[2] and ch_val == 1:
                 # 上ボタンが操作された
-                if len(self.pattern) <= 8:
+                if len(self.pattern) < 8:
                     # 範囲内である事を確認
                     # 最後の値を取り出し
                     val = self.pattern[-1]
@@ -193,6 +206,16 @@ class Main():
                     # パターンリストの最後の値を削除
                     self.pattern.pop()
                     print(self.pattern)
+
+    def SaveToSetting(self):
+        """
+        設定の保存
+        """
+        # 保存データの生成
+        yml = {'buttonrange': self.pattern}
+        # 書き込み
+        with open(self.__setting_file, 'w') as file:
+            yaml.dump(yml, file,default_flow_style=False)
 
     def Do(self):
         """
@@ -226,6 +249,10 @@ class Main():
             self.__state_main = State_Main.RESET
 
             # 立ち上がった事を示す点灯
+            # 点灯範囲を示す
+            for ch in self.pattern:
+                ioexp.Update(ch, 3)
+            time.sleep(3)
             ioexp.Flash()
 
             # メインループ
@@ -289,6 +316,8 @@ class Main():
                     ioexp.Flash(1)
                     # 全消灯
                     ioexp.Update(9, 0)
+                    # 保存
+                    self.SaveToSetting()
                     # 状態を移行
                     self.__state_main = State_Main.RESET
                     pass
@@ -361,4 +390,4 @@ def main(args=None):
 
 if __name__ == '__main__':
     # 引数Trueでデバッグモード
-    main(True)
+    main(False)
