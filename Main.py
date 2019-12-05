@@ -96,7 +96,7 @@ class Main():
     __pattern_now_mode = 3
 
     # 設定ファイル名
-    __setting_file = 'config.yaml'
+    __setting_file = '/home/pi/gitwork/python/poka/config.yaml'
 
     def __init__(self, arg_verbose=False):
         """
@@ -252,7 +252,7 @@ class Main():
             # 点灯範囲を示す
             for ch in self.pattern:
                 ioexp.Update(ch, 3)
-            time.sleep(3)
+            time.sleep(2)
             ioexp.Flash()
 
             # メインループ
