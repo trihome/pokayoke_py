@@ -149,6 +149,13 @@ class IoExpI2C():
         """
         pass
 
+    def print(self, arg_message, arg_err=False):
+        """
+        デバッグ用メッセージ
+        """
+        if self.__debug == True:
+            print(" > %s" % (arg_message))
+
     def event_Thread(self):
         """
         スレッド・ランプ出力の点滅
@@ -279,10 +286,10 @@ class IoExpI2C():
                     self.__GpioStatus[ch] = arg_val
             else:
                 # それ以外の時はエラー
-                print("Port %s is not found." % (arg_ch))
+                self.print("Port %s is not found." % (arg_ch))
         else:
             # それ以外の時はエラー
-            print("val error %d." % (arg_ch))
+            self.print("val error %d." % (arg_ch))
 
     def IoExpUpdate(self, arg_ch, arg_val):
         """
