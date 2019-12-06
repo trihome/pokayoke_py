@@ -139,62 +139,90 @@ class Main():
         ch_val = GPIO.input(gpio_pin)
         self.print(" Callback > GPIO [ %d ] > %d" % (gpio_pin, ch_val))
 
-        # メインステートの変更
+        btnA = 0
+        btnB = 0
+        btnUp = 0
+        btnDown = 0
+        # ポート番号から、該当するボタンに読み替え
         if gpio_pin == self.__gpio_input[0]:
-            # ■■■　Aボタンが押された
-            if self.__state_main == State_Main.CHANGERANGE:
-                # 範囲設定モードの時、範囲確定に移る
-                self.__state_main = State_Main.CHANGERANGE_DONE
-            elif self.__state_main == State_Main.DO:
-                # 運転中は何もしない
-                pass
+            if ch_val == 1:
+                # アップパルス
+                btnA = 1
             else:
-                # 運転状態に移行
-                self.__state_main = State_Main.DO
-
+                # ダウンパルス
+                btnA = -1
         elif gpio_pin == self.__gpio_input[1]:
-            # ■■■　Bボタンが押された
-            if self.__state_main == State_Main.DO:
-                # 運転状態から一時停止状態に移行
-                self.__state_main = State_Main.PAUSE
+            if ch_val == 1:
+                # アップパルス
+                btnB = 1
+            else:
+                # ダウンパルス
+                btnB = -1
+        elif gpio_pin == self.__gpio_input[2]:
+            if ch_val == 1:
+                # アップパルス
+                btnUp = 1
+            else:
+                # ダウンパルス
+                btnUp = -1
+        elif gpio_pin == self.__gpio_input[3]:
+            if ch_val == 1:
+                # アップパルス
+                btnDown = 1
+            else:
+                # ダウンパルス
+                btnDown = -1
+        else:
+            pass
 
-            # 長押し時間の指定
-            time_nagaoshi = 0.7
-            # 一時停止状態でBボタン押しっぱなしなら、長押し時間計測開始
-            if (self.__state_main == State_Main.PAUSE) and (ch_val == 1):
-                # 押されたとき、現在時間を保存
-                self.__gpio_input_timer[self.__gpio_input.index(
-                    gpio_pin)] = time.time()
-            elif ch_val == 0:
-                # 離されたとき、現在時間との差を計算
-                div = time.time() - \
-                    self.__gpio_input_timer[self.__gpio_input.index(gpio_pin)]
-                if div > time_nagaoshi and div < time_nagaoshi * 5:
-                    # 指定時間以上押されたらリセット状態に移行
-                    self.__state_main = State_Main.RESET
+        # ステートの変更
+        self.ChangeState(btnA, btnB, btnUp, btnDown, gpio_pin)
 
-        elif gpio_pin == self.__gpio_input[2] or gpio_pin == self.__gpio_input[3]:
-            # ■■■　上下ボタンが押された
-            # 一時停止状態の時
-            if self.__state_main == State_Main.PAUSE:
-                    # リセット状態に移行
-                self.__state_main = State_Main.RESET
-            elif self.__state_main == State_Main.DO:
-                # 運転中は何もしない
-                pass
-            elif self.__state_main == State_Main.RESET:
-                # リセット状態の時
+    def ChangeState(self, arg_BtnA, arg_BtnB, arg_BtnUp, arg_BtnDown, arg_gpiopin):
+        """
+        ステートの変更
+        """
+
+        if self.__state_main == State_Main.RESET or self.__state_main == State_Main.NONE:
+            # ■■■　NONE/リセット状態
+            if arg_BtnA == 1:
+                # ボタンA：運転中
+                self.__state_main = State_Main.DO
+            elif arg_BtnUp == 1 or arg_BtnDown == 1:
                 # 範囲変更モードに移行
                 self.__state_main = State_Main.CHANGERANGE
                 self.print(" MODE : CHANGERANGE")
             else:
                 pass
-        else:
-            pass
 
-        if self.__state_main == State_Main.CHANGERANGE:
-            # 範囲変更モードのとき
-            if gpio_pin == self.__gpio_input[2] and ch_val == 1:
+        elif self.__state_main == State_Main.PAUSE:
+            # ■■■　一時停止中
+            if arg_BtnB == 1:
+                # ボタンB：現在時間を保存
+                self.__gpio_input_timer[self.__gpio_input.index(
+                    arg_gpiopin)] = time.time()
+            elif arg_BtnB == -1:
+                # 長押し時間の指定
+                time_nagaoshi = 0.7
+                # 長押し時間の計算
+                div = time.time() - \
+                    self.__gpio_input_timer[self.__gpio_input.index(
+                        arg_gpiopin)]
+                if div > time_nagaoshi and div < time_nagaoshi * 5:
+                    # 長押し判断でリセット状態に移行
+                    self.__state_main = State_Main.RESET
+            else:
+                pass
+
+        elif self.__state_main == State_Main.DO:
+            # ■■■　運転中
+            if arg_BtnB == 1:
+                # ボタンB：一時停止中
+                self.__state_main = State_Main.PAUSE
+
+        elif self.__state_main == State_Main.CHANGERANGE:
+            # ■■■　範囲変更中
+            if arg_BtnUp == 1:
                 # ■■■　上ボタンが操作された
                 if len(self.pattern) < 8:
                     # 範囲内である事を確認
@@ -205,14 +233,23 @@ class Main():
                     # パターンリストの最後に追加
                     self.pattern.append(val)
                     self.print(self.pattern)
-
-            elif gpio_pin == self.__gpio_input[3] and ch_val == 1:
+            elif arg_BtnDown == 1:
                 # ■■■　下ボタンが押された
                 if len(self.pattern) > 2:
                     # 範囲内である事を確認
                     # パターンリストの最後の値を削除
                     self.pattern.pop()
                     self.print(self.pattern)
+            elif arg_BtnA == 1:
+                # 範囲設定モードの時、範囲確定に移る
+                self.__state_main = State_Main.CHANGERANGE_DONE
+
+        elif self.__state_main == State_Main.CHANGERANGE_DONE:
+            # ■■■　範囲変更完了
+            self.__state_main = State_Main.RESET
+            pass
+        else:
+            pass
 
     def SaveToSetting(self):
         """
@@ -342,6 +379,8 @@ class Main():
         """
         ステート・点灯範囲の切替状態
         """
+        # リモコンランプを点灯
+        self.gpioout.Update(0, 3)
         # 範囲の数を数える
         length = len(self.pattern)
         # 設定されている範囲だけ点灯
@@ -355,6 +394,8 @@ class Main():
         """
         ステート・点灯範囲の切替が確定の状態
         """
+        # リモコンランプを点灯
+        self.gpioout.Update(0, 0)
         # 確定した範囲を示す点滅
         for ch in self.pattern:
             self.ioexp.Update(ch, 4)
@@ -383,8 +424,23 @@ class Main():
             pattern_now = self.pattern[self.__pattern_counter]
             # 対象を中速点滅
             self.ioexp.Update(pattern_now,  self.__pattern_now_mode)
+
+            # 対象のボタンが押されたかチェック
+            if self.i2c_status[pattern_now] == 1:
+                # 対象を点灯
+                self.ioexp.Update(pattern_now, 1)
+                # パターンの進捗カウンタをインクリメントし、次のパターン番号に移行
+                self.__pattern_counter += 1
+                # 点灯・点滅パターンを初期値に戻す
+                self.__pattern_now_mode = 3
+            elif (self.i2c_status[pattern_now] == 0) and (sum(self.i2c_status) > 0):
+                # 間違ったボタンを押した
+                # 対象を高速点滅に切替
+                self.__pattern_now_mode = 4
+            else:
+                pass
         else:
-            # カウンタがパターン数を超えたら
+            # カウンタがパターン数を超えたら、リセット処理に入る
             # 一旦全点灯
             for ch in self.pattern:
                 self.ioexp.Update(ch, 1)
@@ -398,21 +454,6 @@ class Main():
             self.__pattern_counter = 0
             # IoExpを全消灯
             self.ioexp.IoExpUpdate(9, 0)
-
-        # 対象のボタンが押されたかチェック
-        if self.i2c_status[pattern_now] == 1:
-            # 対象を点灯
-            self.ioexp.Update(pattern_now, 1)
-            # パターンの進捗カウンタをインクリメントし、次のパターン番号に移行
-            self.__pattern_counter += 1
-            # 点灯・点滅パターンを初期値に戻す
-            self.__pattern_now_mode = 3
-        elif (self.i2c_status[pattern_now] == 0) and (sum(self.i2c_status) > 0):
-            # 間違ったボタンを押した
-            # 対象を高速点滅に切替
-            self.__pattern_now_mode = 4
-        else:
-            pass
 
 
 def main(args=None):
