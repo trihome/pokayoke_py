@@ -103,6 +103,9 @@ class IoExpI2C():
     # 点滅カウンタ
     __blink = 0
 
+    #デバッグモード
+    __debug=False
+
     # ------------------------
     # メンバ関数
     # ------------------------
@@ -119,6 +122,9 @@ class IoExpI2C():
         '''
         # 定数の設定
         self.__ICADDR = arg_icaddr
+
+        #デバッグモード
+        self.__debug = arg_verbose
 
         # IoExpander ICの初期化
         # I2Cの設定
@@ -226,10 +232,10 @@ class IoExpI2C():
         elif arg_mode == 1:
             # 流星右～左
             for i in range(8):
-                self.IoExpUpdate(8 - i, 1)
+                self.IoExpUpdate(7 - i, 1)
                 time.sleep(0.03)
             for i in range(8):
-                self.IoExpUpdate(8 - i, 0)
+                self.IoExpUpdate(7 - i, 0)
                 time.sleep(0.03)
         elif arg_mode == 2:
             # 点滅
