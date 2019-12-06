@@ -82,17 +82,19 @@ class Main():
     # GPIO出力ポート
     __gpio_output = [26, 19, 13, 6]
 
-    # メインステート
+    # シーケンス制御用のステート保持関数
     __state_main = None
 
-    # デバッグモード
+    # デバッグモード（メッセージを積極的に表示）
     __debug = False
 
     # 点灯パターンのデフォルト値
     pattern = [0, 1, 2, 3]
-    # パターンの進捗カウンタ
+    # 点灯パターンの進捗カウンタ
+    # (pattern変数のindex番号になる)
     __pattern_counter = 0
     # 現在点灯中のランプの点灯・点滅パターン
+    # デフォルトは点滅とする
     __pattern_now_mode = 3
 
     # 設定ファイル名
@@ -110,13 +112,17 @@ class Main():
             self.__debug = True
 
         # yaml形式設定ファイルを読み込み
-        with open(self.__setting_file) as file:
-            config = yaml.safe_load(file.read())
-            # パターンを読み込み
-            pattern = config["buttonrange"]
-            if len(pattern) > 1:
-                #読み込みが上手くいけば、パターンデータを置き換え
-                self.pattern = pattern
+        try:
+            with open(self.__setting_file) as file:
+                config = yaml.safe_load(file.read())
+                # パターンを読み込み
+                pattern = config["buttonrange"]
+                if len(pattern) > 1:
+                    # 読み込みが上手くいけば、パターンデータを置き換え
+                    self.pattern = pattern
+        finally:
+            # 読み込みエラーがあれば、デフォルト値をそのまま使う
+            pass
 
     def print(self, arg_message, arg_err=False):
         """
@@ -135,7 +141,7 @@ class Main():
 
         # メインステートの変更
         if gpio_pin == self.__gpio_input[0]:
-            # Aボタンが押された
+            # ■■■　Aボタンが押された
             if self.__state_main == State_Main.CHANGERANGE:
                 # 範囲設定モードの時、範囲確定に移る
                 self.__state_main = State_Main.CHANGERANGE_DONE
@@ -147,7 +153,7 @@ class Main():
                 self.__state_main = State_Main.DO
 
         elif gpio_pin == self.__gpio_input[1]:
-            # Bボタンが押された
+            # ■■■　Bボタンが押された
             if self.__state_main == State_Main.DO:
                 # 運転状態から一時停止状態に移行
                 self.__state_main = State_Main.PAUSE
@@ -166,8 +172,9 @@ class Main():
                 if div > time_nagaoshi and div < time_nagaoshi * 5:
                     # 指定時間以上押されたらリセット状態に移行
                     self.__state_main = State_Main.RESET
+
         elif gpio_pin == self.__gpio_input[2] or gpio_pin == self.__gpio_input[3]:
-            # 上下ボタンが押された
+            # ■■■　上下ボタンが押された
             # 一時停止状態の時
             if self.__state_main == State_Main.PAUSE:
                     # リセット状態に移行
@@ -179,7 +186,7 @@ class Main():
                 # リセット状態の時
                 # 範囲変更モードに移行
                 self.__state_main = State_Main.CHANGERANGE
-                print(" MODE : CHANGERANGE")
+                self.print(" MODE : CHANGERANGE")
             else:
                 pass
         else:
@@ -188,7 +195,7 @@ class Main():
         if self.__state_main == State_Main.CHANGERANGE:
             # 範囲変更モードのとき
             if gpio_pin == self.__gpio_input[2] and ch_val == 1:
-                # 上ボタンが操作された
+                # ■■■　上ボタンが操作された
                 if len(self.pattern) < 8:
                     # 範囲内である事を確認
                     # 最後の値を取り出し
@@ -197,15 +204,15 @@ class Main():
                     val += 1
                     # パターンリストの最後に追加
                     self.pattern.append(val)
-                    print(self.pattern)
+                    self.print(self.pattern)
 
             elif gpio_pin == self.__gpio_input[3] and ch_val == 1:
-                # 下ボタンが押された
+                # ■■■　下ボタンが押された
                 if len(self.pattern) > 2:
                     # 範囲内である事を確認
                     # パターンリストの最後の値を削除
                     self.pattern.pop()
-                    print(self.pattern)
+                    self.print(self.pattern)
 
     def SaveToSetting(self):
         """
@@ -215,7 +222,7 @@ class Main():
         yml = {'buttonrange': self.pattern}
         # 書き込み
         with open(self.__setting_file, 'w') as file:
-            yaml.dump(yml, file,default_flow_style=False)
+            yaml.dump(yml, file, default_flow_style=False)
 
     def Do(self):
         """
@@ -240,10 +247,10 @@ class Main():
                 GPIO.setup(port, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
             # I2C初期化
-            ioexp = IoExpI2C.IoExpI2C()
+            self.ioexp = IoExpI2C.IoExpI2C(arg_verbose=self.__debug)
 
             # GPIO出力初期化
-            gpioout = GpioOut.GpioOut(self.__gpio_output)
+            self.gpioout = GpioOut.GpioOut(self.__gpio_output)
 
             # ステート初期化
             self.__state_main = State_Main.RESET
@@ -251,130 +258,160 @@ class Main():
             # 立ち上がった事を示す点灯
             # 点灯範囲を示す
             for ch in self.pattern:
-                ioexp.Update(ch, 3)
+                self.ioexp.Update(ch, 3)
             time.sleep(2)
-            ioexp.Flash()
+            self.ioexp.Flash()
 
             # メインループ
             while True:
 
                 # I2C入力監視
-                i2c_status = [0, 0, 0, 0, 0, 0, 0, 0]
+                self.i2c_status = [0, 0, 0, 0, 0, 0, 0, 0]
                 for port in self.__gpio_int:
                     if GPIO.input(port) == GPIO.LOW:
                         self.print(" I2C INT > GPIO [ %d ]" % port)
-                        i2c_status = ioexp.Read()
+                        self.i2c_status = self.ioexp.Read()
 
                 # ステート毎の処理
                 if self.__state_main == State_Main.NONE:
-                    self.print("State > NONE")
-                    # リモコンランプを点灯
-                    gpioout.Update(0, 0)
-                    gpioout.Update(1, 1)
-                    # IoExpを全消灯
-                    ioexp.Update(9, 0)
+                    #self.print("State > NONE")
+                    self.State_RESET()
 
                 elif self.__state_main == State_Main.RESET:
                     # リセット状態
-                    self.print("State > RESET")
-                    # リモコンランプを点灯
-                    gpioout.Update(0, 0)
-                    gpioout.Update(1, 1)
-                    # IoExpを全消灯
-                    ioexp.Update(9, 0)
-                    # パターンの進捗カウンタをリセット
-                    self.__pattern_counter = 0
-                    # 点灯・点滅パターンを初期値に戻す
-                    self.__pattern_now_mode = 3
+                    #self.print("State > RESET")
+                    self.State_RESET()
 
                 elif self.__state_main == State_Main.PAUSE:
                     # 一時停止状態
-                    self.print("State > PAUSE")
-                    # リモコンランプを点灯
-                    gpioout.Update(0, 0)
-                    gpioout.Update(1, 3)
+                    #self.print("State > PAUSE")
+                    self.State_PAUSE()
 
                 elif self.__state_main == State_Main.CHANGERANGE:
                     # 範囲変更受付の状態
                     #self.print("State > CHANGERANGE")
-                    # 範囲の数を数える
-                    length = len(self.pattern)
-                    # 設定されている範囲だけ点灯
-                    for ch in range(length):
-                        ioexp.Update(ch, 3)
-                    # それ以外を消灯
-                    for ch in range(length, 8):
-                        ioexp.Update(ch, 0)
+                    self.State_CHANGERANGE()
+
                 elif self.__state_main == State_Main.CHANGERANGE_DONE:
                     # 範囲変更受付完了の状態
-                    self.print("State > CHANGERANGE_DONE")
-                    # 確定した範囲を示す点滅
-                    for ch in self.pattern:
-                        ioexp.Update(ch, 4)
-                    time.sleep(1)
-                    # フラッシュ
-                    ioexp.Flash(1)
-                    # 全消灯
-                    ioexp.Update(9, 0)
-                    # 保存
-                    self.SaveToSetting()
-                    # 状態を移行
-                    self.__state_main = State_Main.RESET
-                    pass
+                    #self.print("State > CHANGERANGE_DONE")
+                    self.State_CHANGERANGE_DONE()
+
                 elif self.__state_main == State_Main.DO:
                     # 運転中の状態
-                    self.print("State > DO")
-                    # リモコンランプを点灯
-                    gpioout.Update(0, 1)
-                    gpioout.Update(1, 0)
-                    # パターンに応じて点灯
-                    if self.__pattern_counter < len(self.pattern):
-                        # カウンタがパターン数を超えてなければ
-                        # 現在のパターンを読み出し
-                        pattern_now = self.pattern[self.__pattern_counter]
-                        # 対象を中速点滅
-                        ioexp.Update(pattern_now,  self.__pattern_now_mode)
-                    else:
-                        # カウンタがパターン数を超えたら
-                        # 一旦全点灯
-                        for ch in self.pattern:
-                            ioexp.Update(ch, 1)
-                        time.sleep(0.5)
-                        # フラッシュ
-                        ioexp.Flash(1)
-                        # 全消灯
-                        ioexp.Update(9, 0)
-                        time.sleep(0.5)
-                        # パターンの進捗カウンタをリセット
-                        self.__pattern_counter = 0
-                        # IoExpを全消灯
-                        ioexp.IoExpUpdate(9, 0)
-
-                    # 対象のボタンが押されたかチェック
-                    if i2c_status[pattern_now] == 1:
-                        # 対象を点灯
-                        ioexp.Update(pattern_now, 1)
-                        # パターンの進捗カウンタをインクリメントし、次のパターン番号に移行
-                        self.__pattern_counter += 1
-                        # 点灯・点滅パターンを初期値に戻す
-                        self.__pattern_now_mode = 3
-                    elif (i2c_status[pattern_now] == 0) and (sum(i2c_status) > 0):
-                        # 間違ったボタンを押した
-                        # 対象を高速点滅に切替
-                        self.__pattern_now_mode = 4
-                    else:
-                        pass
+                    #self.print("State > DO")
+                    self.State_DO()
 
                 time.sleep(0.01)
 
         except KeyboardInterrupt:
             # IoExpを全消灯
-            ioexp.IoExpUpdate(9, 0)
+            self.ioexp.IoExpUpdate(9, 0)
+            # GPIOを全消灯
+            self.gpioout.Update(0, 0)
             # コールバック解放処理
             for port in self.__gpio_input:
                 GPIO.remove_event_detect(port)
             GPIO.cleanup()
         finally:
+            pass
+
+    def State_RESET(self):
+        """
+        ステート・リセット状態
+        """
+        # リモコンランプを点灯
+        self.gpioout.Update(0, 0)
+        self.gpioout.Update(1, 1)
+        # IoExpを全消灯
+        self.ioexp.Update(9, 0)
+        # パターンの進捗カウンタをリセット
+        self.__pattern_counter = 0
+        # 点灯・点滅パターンを初期値に戻す
+        self.__pattern_now_mode = 3
+
+    def State_PAUSE(self):
+        """
+        ステート・一時停止状態
+        """
+        # リモコンランプを点灯
+        self.gpioout.Update(0, 0)
+        self.gpioout.Update(1, 3)
+
+    def State_CHANGERANGE(self):
+        """
+        ステート・点灯範囲の切替状態
+        """
+        # 範囲の数を数える
+        length = len(self.pattern)
+        # 設定されている範囲だけ点灯
+        for ch in range(length):
+            self.ioexp.Update(ch, 3)
+        # それ以外を消灯
+        for ch in range(length, 8):
+            self.ioexp.Update(ch, 0)
+
+    def State_CHANGERANGE_DONE(self):
+        """
+        ステート・点灯範囲の切替が確定の状態
+        """
+        # 確定した範囲を示す点滅
+        for ch in self.pattern:
+            self.ioexp.Update(ch, 4)
+        time.sleep(1)
+        # フラッシュ
+        self.ioexp.Flash(1)
+        # 全消灯
+        self.ioexp.Update(9, 0)
+        # 保存
+        self.SaveToSetting()
+        # 状態を移行
+        self.__state_main = State_Main.RESET
+
+    def State_DO(self):
+        """
+        ステート・運転中の状態
+        """
+        # リモコンランプを点灯
+        self.gpioout.Update(0, 1)
+        self.gpioout.Update(1, 0)
+
+        # パターンに応じて点灯
+        if self.__pattern_counter < len(self.pattern):
+            # カウンタがパターン数を超えてなければ
+            # 現在のパターンを読み出し
+            pattern_now = self.pattern[self.__pattern_counter]
+            # 対象を中速点滅
+            self.ioexp.Update(pattern_now,  self.__pattern_now_mode)
+        else:
+            # カウンタがパターン数を超えたら
+            # 一旦全点灯
+            for ch in self.pattern:
+                self.ioexp.Update(ch, 1)
+            time.sleep(0.5)
+            # フラッシュ
+            self.ioexp.Flash(1)
+            # 全消灯
+            self.ioexp.Update(9, 0)
+            time.sleep(0.5)
+            # パターンの進捗カウンタをリセット
+            self.__pattern_counter = 0
+            # IoExpを全消灯
+            self.ioexp.IoExpUpdate(9, 0)
+
+        # 対象のボタンが押されたかチェック
+        if self.i2c_status[pattern_now] == 1:
+            # 対象を点灯
+            self.ioexp.Update(pattern_now, 1)
+            # パターンの進捗カウンタをインクリメントし、次のパターン番号に移行
+            self.__pattern_counter += 1
+            # 点灯・点滅パターンを初期値に戻す
+            self.__pattern_now_mode = 3
+        elif (self.i2c_status[pattern_now] == 0) and (sum(self.i2c_status) > 0):
+            # 間違ったボタンを押した
+            # 対象を高速点滅に切替
+            self.__pattern_now_mode = 4
+        else:
             pass
 
 
@@ -384,8 +421,8 @@ def main(args=None):
     Parameters
     ----------
     """
-    do = Main(args)
-    do.Do()
+    m = Main(args)
+    m.Do()
 
 
 if __name__ == '__main__':
